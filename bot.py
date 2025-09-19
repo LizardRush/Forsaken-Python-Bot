@@ -20,7 +20,6 @@ OS_NAME = platform.system().lower()
 
 movement_keys = [["w"], ["a"], ["s"], ["d"],
                  ["w", "a"], ["w", "d"], ["a", "s"], ["d", "s"]]
-reverse_map = {"w": "s", "s": "w", "a": "d", "d": "a"}
 
 paused = False
 running = True
@@ -28,7 +27,7 @@ last_move = None
 coin_flip = None
 abilities = []
 
-# === Script & log directory setup ===
+# --- Script & log directory setup ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "disconnected_logs")
 
@@ -38,7 +37,26 @@ else:
     for f in os.listdir(LOG_DIR):
         os.remove(os.path.join(LOG_DIR, f))
 
-# === OS-specific helpers ===
+# --- Self-Updater ---
+def check_for_updates(force=False):
+    url = "https://raw.githubusercontent.com/LizardRush/Forsaken-Python-Bot/refs/heads/main/bot.py"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            remote_code = r.text
+            with open(os.path.abspath(__file__), "r", encoding="utf-8") as f:
+                local_code = f.read()
+            if remote_code.strip() != local_code.strip():
+                with open(os.path.abspath(__file__), "w", encoding="utf-8") as f:
+                    f.write(remote_code)
+                print("Updated! Run program again to use")
+                sys.exit(0)
+            elif force:
+                print("No updates found (already latest).")
+    except Exception as e:
+        print("Update check failed:", e)
+
+# --- OS-specific helpers ---
 def launch_roblox(place_id=None):
     if OS_NAME == "darwin":
         if place_id:
@@ -95,15 +113,15 @@ def quit_roblox():
 def fullscreen_roblox():
     pass
 
-# === Disconnected Detection ===
+# --- Disconnected Detection ---
 def check_disconnected():
     img = ImageGrab.grab()
     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    data = pytesseract.image_to_data(img_bgr, output_type=cv2.OCR_DICT)
+    data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
 
     for i, word in enumerate(data["text"]):
         if "disconnected" in word.lower():
-            (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
+            x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
             cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
@@ -122,7 +140,7 @@ def reconnect_if_disconnected():
             print("✅ Reconnected to Roblox.")
         time.sleep(1)
 
-# === Movement & actions ===
+# --- Movement & actions ---
 def press_keys(keys, hold_time=3):
     for k in keys:
         keyboard.press(k)
@@ -145,7 +163,7 @@ def occasional_f():
         time.sleep(1)
         keyboard.release("f")
 
-# === Main Loop ===
+# --- Main Loop ---
 def movement_loop():
     global running, last_move, paused
     paused = True
@@ -175,7 +193,6 @@ def movement_loop():
             if random.random() < 0.05:
                 spin_sequence()
             occasional_f()
-
             if abilities and random.random() < 0.25:
                 ability = random.choice(abilities)
                 keyboard.press(ability)
@@ -200,29 +217,11 @@ def on_press(key):
         quit_roblox()
         running = False
         return False
-    if key == kb.Key.f10:  # Manual update check
+    if key == kb.Key.f10:
         print("🔄 Manual update check triggered")
         check_for_updates(force=True)
 
-# === Self-Updater (in-memory exec) ===
-def check_for_updates(force=False):
-    url = "https://raw.githubusercontent.com/LizardRush/Forsaken-Python-Bot/refs/heads/main/bot.py"
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            remote_code = r.text
-            with open(os.path.abspath(__file__), "r", encoding="utf-8") as f:
-                local_code = f.read()
-            if remote_code.strip() != local_code.strip():
-                print("🔄 Update found! Running new code in memory...")
-                exec(remote_code, globals())
-                return
-            elif force:
-                print("ℹ️ No updates found (already latest).")
-    except Exception as e:
-        print("Update check failed:", e)
-
-# === Entry Point ===
+# --- Entry Point ---
 if __name__ == "__main__":
     threading.Thread(target=check_for_updates, daemon=True).start()
 
