@@ -5,6 +5,7 @@ import threading
 import subprocess
 import pyautogui
 import os
+import sys
 import datetime
 from pynput import keyboard as kb
 from pynput.keyboard import Controller, Key
@@ -15,7 +16,7 @@ import cv2
 import numpy as np
 
 keyboard = Controller()
-OS_NAME = platform.system().lower()  # "darwin", "windows", "linux"
+OS_NAME = platform.system().lower()
 
 movement_keys = [["w"], ["a"], ["s"], ["d"],
                  ["w", "a"], ["w", "d"], ["a", "s"], ["d", "s"]]
@@ -26,7 +27,6 @@ running = True
 last_move = None
 coin_flip = None
 abilities = []
-user_id = None
 
 # === Script & log directory setup ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +40,7 @@ else:
 
 # === OS-specific helpers ===
 def launch_roblox(place_id=None):
-    if OS_NAME == "darwin":  # macOS
+    if OS_NAME == "darwin":
         if place_id:
             os.system(f"open roblox://placeId={place_id}")
         else:
@@ -93,18 +93,16 @@ def quit_roblox():
         print("Error quitting Roblox:", e)
 
 def fullscreen_roblox():
-    pass  # Platform-dependent, skipped
+    pass
 
 # === Disconnected Detection ===
 def check_disconnected():
     img = ImageGrab.grab()
     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(img_bgr, output_type=cv2.OCR_DICT)
 
-    found = False
     for i, word in enumerate(data["text"]):
         if "disconnected" in word.lower():
-            found = True
             (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
             cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -113,8 +111,8 @@ def check_disconnected():
             filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
             cv2.imwrite(filename, img_bgr)
             print(f"⚠️ Disconnected detected! Logged to {filename}")
-            break
-    return found
+            return True
+    return False
 
 def reconnect_if_disconnected():
     while True:
@@ -202,9 +200,12 @@ def on_press(key):
         quit_roblox()
         running = False
         return False
+    if key == kb.Key.f10:  # Manual update check
+        print("🔄 Manual update check triggered")
+        check_for_updates(force=True)
 
-# === Self-Updater ===
-def check_for_updates():
+# === Self-Updater (in-memory exec) ===
+def check_for_updates(force=False):
     url = "https://raw.githubusercontent.com/LizardRush/Forsaken-Python-Bot/refs/heads/main/bot.py"
     try:
         r = requests.get(url, timeout=10)
@@ -213,11 +214,11 @@ def check_for_updates():
             with open(os.path.abspath(__file__), "r", encoding="utf-8") as f:
                 local_code = f.read()
             if remote_code.strip() != local_code.strip():
-                print("🔄 Update found! Applying...")
-                with open(os.path.abspath(__file__), "w", encoding="utf-8") as f:
-                    f.write(remote_code)
-                print("✅ Updated script. Restarting...")
-                os.execv(sys.executable, ["python"] + sys.argv)
+                print("🔄 Update found! Running new code in memory...")
+                exec(remote_code, globals())
+                return
+            elif force:
+                print("ℹ️ No updates found (already latest).")
     except Exception as e:
         print("Update check failed:", e)
 
