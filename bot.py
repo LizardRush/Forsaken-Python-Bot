@@ -40,9 +40,6 @@ else:
 LOG_DIR = "disconnected_logs"
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
-else:
-    for f in os.listdir(LOG_DIR):
-        os.remove(os.path.join(LOG_DIR, f))
 
 # === OS-specific helpers ===
 def launch_roblox(place_id=None):
@@ -107,20 +104,34 @@ def fullscreen_roblox():
 def check_disconnected():
     img = ImageGrab.grab()
     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
+
+    # Preprocess image for better OCR
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+    data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
 
     found = False
     for i, word in enumerate(data["text"]):
         if "disconnected" in word.lower():
             found = True
             (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
+
+            # draw bounding box
             cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
+
+            # add timestamp text
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, (0, 0, 255), 2, cv2.LINE_AA)
+
+            # save screenshot with timestamped filename
             filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-            cv2.imwrite(filename, img_bgr)
-            print(f"⚠️ Disconnected detected! Logged to {filename}")
+            try:
+                cv2.imwrite(filename, img_bgr)
+                print(f"⚠️ Disconnected detected! Logged to {filename}")
+            except Exception as e:
+                print("❌ Failed to save screenshot:", e)
             break
     return found
 
