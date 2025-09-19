@@ -101,27 +101,35 @@ def check_disconnected():
 
     data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
 
+    found = False
     for i, word in enumerate(data["text"]):
         if "disconnected" in word.lower():
+            found = True
             (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
 
-            # Draw bounding box
+            # Increase bounding box size by 10 pixels in all directions
+            x = max(0, x - 10)
+            y = max(0, y - 10)
+            w += 20
+            h += 20
+
+            # draw bounding box
             cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
 
-            # Add timestamp
+            # add timestamp text
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, (0, 0, 255), 2, cv2.LINE_AA)
 
-            # Save screenshot in new LOG_DIR
+            # save screenshot with timestamped filename
             filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
             try:
                 cv2.imwrite(filename, img_bgr)
                 print(f"⚠️ Disconnected detected! Logged to {filename}")
             except Exception as e:
                 print("❌ Failed to save screenshot:", e)
-            return True
-    return False
+            break
+    return found
 
 def reconnect_if_disconnected():
     while True:
