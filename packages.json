@@ -1,0 +1,9 @@
+[
+  "requests",
+  "pytesseract",
+  "opencv-python",
+  "pynput",
+  "Pillow",
+  "pyautogui",
+  "numpy"
+]
