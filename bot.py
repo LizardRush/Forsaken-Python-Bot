@@ -13,30 +13,7 @@ import pytesseract
 from PIL import ImageGrab
 import cv2
 import numpy as np
-import sys
 
-# === Auto-Updater ===
-BOT_URL = "https://raw.githubusercontent.com/LizardRush/Forsaken-Python-Bot/refs/heads/main/bot.py"
-LOCAL_FILE = os.path.abspath(__file__)
-
-try:
-    response = requests.get(BOT_URL, timeout=10)
-    if response.status_code == 200:
-        remote_code = response.text
-        with open(LOCAL_FILE, "r", encoding="utf-8") as f:
-            local_code = f.read()
-        if remote_code.strip() != local_code.strip():
-            print("⚠️ Update found! Updating bot...")
-            with open(LOCAL_FILE, "w", encoding="utf-8") as f:
-                f.write(remote_code)
-            print("✅ Bot updated! Restarting...")
-            os.execv(sys.executable, ["python"] + sys.argv)
-    else:
-        print(f"Updater: Failed to fetch bot file (HTTP {response.status_code})")
-except Exception as e:
-    print(f"Updater error: {e}")
-
-# === Globals ===
 keyboard = Controller()
 OS_NAME = platform.system().lower()  # "darwin", "windows", "linux"
 
@@ -51,19 +28,15 @@ coin_flip = None
 abilities = []
 user_id = None
 
-if os.path.exists("user_id.txt"):
-    with open("user_id.txt", "r") as f:
-        user_id = f.read().strip()
-else:
-    with open("user_id.txt", "w+") as f:
-        uid = input("Input your user ID: ")
-        f.write(uid)
-        user_id = uid
+# === Script & log directory setup ===
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(SCRIPT_DIR, "disconnected_logs")
 
-# === Disconnected log setup ===
-LOG_DIR = "disconnected_logs"
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
+else:
+    for f in os.listdir(LOG_DIR):
+        os.remove(os.path.join(LOG_DIR, f))
 
 # === OS-specific helpers ===
 def launch_roblox(place_id=None):
@@ -120,37 +93,36 @@ def quit_roblox():
         print("Error quitting Roblox:", e)
 
 def fullscreen_roblox():
-    pass  # Too platform-specific
+    pass  # Platform-dependent, skipped
 
 # === Disconnected Detection ===
 def check_disconnected():
-    try:
-        img = ImageGrab.grab()
-        img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
+    img = ImageGrab.grab()
+    img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
 
-        for i, word in enumerate(data["text"]):
-            if "disconnected" in word.lower():
-                (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
-                cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7, (0, 0, 255), 2, cv2.LINE_AA)
-                filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                cv2.imwrite(filename, img_bgr)
-                print(f"⚠️ Disconnected detected! Logged to {filename}")
-                return True
-    except Exception as e:
-        print(f"Error in check_disconnected: {e}")
-    return False
+    found = False
+    for i, word in enumerate(data["text"]):
+        if "disconnected" in word.lower():
+            found = True
+            (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
+            cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7, (0, 0, 255), 2, cv2.LINE_AA)
+            filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            cv2.imwrite(filename, img_bgr)
+            print(f"⚠️ Disconnected detected! Logged to {filename}")
+            break
+    return found
 
 def reconnect_if_disconnected():
-    while running:
+    while True:
         if check_disconnected():
             launch_roblox(place_id="18687417158")
             time.sleep(15)
             print("✅ Reconnected to Roblox.")
-        time.sleep(2)
+        time.sleep(1)
 
 # === Movement & actions ===
 def press_keys(keys, hold_time=3):
@@ -205,6 +177,7 @@ def movement_loop():
             if random.random() < 0.05:
                 spin_sequence()
             occasional_f()
+
             if abilities and random.random() < 0.25:
                 ability = random.choice(abilities)
                 keyboard.press(ability)
@@ -230,8 +203,28 @@ def on_press(key):
         running = False
         return False
 
+# === Self-Updater ===
+def check_for_updates():
+    url = "https://raw.githubusercontent.com/LizardRush/Forsaken-Python-Bot/refs/heads/main/bot.py"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            remote_code = r.text
+            with open(os.path.abspath(__file__), "r", encoding="utf-8") as f:
+                local_code = f.read()
+            if remote_code.strip() != local_code.strip():
+                print("🔄 Update found! Applying...")
+                with open(os.path.abspath(__file__), "w", encoding="utf-8") as f:
+                    f.write(remote_code)
+                print("✅ Updated script. Restarting...")
+                os.execv(sys.executable, ["python"] + sys.argv)
+    except Exception as e:
+        print("Update check failed:", e)
+
 # === Entry Point ===
 if __name__ == "__main__":
+    threading.Thread(target=check_for_updates, daemon=True).start()
+
     coin_flip = input("Coin Flip? (y/n): ").lower()
     if coin_flip == "n":
         ability_count = int(input("How many abilities? (1-4): "))
