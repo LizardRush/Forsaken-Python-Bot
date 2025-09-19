@@ -13,7 +13,30 @@ import pytesseract
 from PIL import ImageGrab
 import cv2
 import numpy as np
+import sys
 
+# === Auto-Updater ===
+BOT_URL = "https://raw.githubusercontent.com/LizardRush/Forsaken-Python-Bot/refs/heads/main/bot.py"
+LOCAL_FILE = os.path.abspath(__file__)
+
+try:
+    response = requests.get(BOT_URL, timeout=10)
+    if response.status_code == 200:
+        remote_code = response.text
+        with open(LOCAL_FILE, "r", encoding="utf-8") as f:
+            local_code = f.read()
+        if remote_code.strip() != local_code.strip():
+            print("⚠️ Update found! Updating bot...")
+            with open(LOCAL_FILE, "w", encoding="utf-8") as f:
+                f.write(remote_code)
+            print("✅ Bot updated! Restarting...")
+            os.execv(sys.executable, ["python"] + sys.argv)
+    else:
+        print(f"Updater: Failed to fetch bot file (HTTP {response.status_code})")
+except Exception as e:
+    print(f"Updater error: {e}")
+
+# === Globals ===
 keyboard = Controller()
 OS_NAME = platform.system().lower()  # "darwin", "windows", "linux"
 
@@ -30,11 +53,12 @@ user_id = None
 
 if os.path.exists("user_id.txt"):
     with open("user_id.txt", "r") as f:
-        user_id = f.read()
+        user_id = f.read().strip()
 else:
     with open("user_id.txt", "w+") as f:
-        f.write(input("Input your user ID: "))
-        user_id = f.read()
+        uid = input("Input your user ID: ")
+        f.write(uid)
+        user_id = uid
 
 # === Disconnected log setup ===
 LOG_DIR = "disconnected_logs"
@@ -54,7 +78,6 @@ def launch_roblox(place_id=None):
         else:
             os.system("start RobloxPlayerBeta.exe")
     elif OS_NAME == "linux":
-        # Assuming wine is used
         if place_id:
             os.system(f"wine RobloxPlayerBeta.exe -play -placeId {place_id}")
         else:
@@ -97,51 +120,37 @@ def quit_roblox():
         print("Error quitting Roblox:", e)
 
 def fullscreen_roblox():
-    # Left blank – too dependent on platform/GUI libs
-    pass
+    pass  # Too platform-specific
 
 # === Disconnected Detection ===
 def check_disconnected():
-    img = ImageGrab.grab()
-    img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    try:
+        img = ImageGrab.grab()
+        img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
 
-    # Preprocess image for better OCR
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-
-    data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
-
-    found = False
-    for i, word in enumerate(data["text"]):
-        if "disconnected" in word.lower():
-            found = True
-            (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
-
-            # draw bounding box
-            cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
-
-            # add timestamp text
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7, (0, 0, 255), 2, cv2.LINE_AA)
-
-            # save screenshot with timestamped filename
-            filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-            try:
+        for i, word in enumerate(data["text"]):
+            if "disconnected" in word.lower():
+                (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
+                cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
                 cv2.imwrite(filename, img_bgr)
                 print(f"⚠️ Disconnected detected! Logged to {filename}")
-            except Exception as e:
-                print("❌ Failed to save screenshot:", e)
-            break
-    return found
+                return True
+    except Exception as e:
+        print(f"Error in check_disconnected: {e}")
+    return False
 
 def reconnect_if_disconnected():
-    while True:
+    while running:
         if check_disconnected():
             launch_roblox(place_id="18687417158")
             time.sleep(15)
             print("✅ Reconnected to Roblox.")
-        time.sleep(1)
+        time.sleep(2)
 
 # === Movement & actions ===
 def press_keys(keys, hold_time=3):
@@ -155,7 +164,6 @@ def spin_sequence():
     def hold_extra(key):
         time.sleep(0.2)
         keyboard.release(key)
-
     for k in ["w", "a", "s", "d"]:
         keyboard.press(k)
         time.sleep(0.2)
@@ -197,7 +205,6 @@ def movement_loop():
             if random.random() < 0.05:
                 spin_sequence()
             occasional_f()
-
             if abilities and random.random() < 0.25:
                 ability = random.choice(abilities)
                 keyboard.press(ability)
