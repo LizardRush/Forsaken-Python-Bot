@@ -5,7 +5,6 @@ import threading
 import subprocess
 import pyautogui
 import os
-import sys
 import datetime
 from pynput import keyboard as kb
 from pynput.keyboard import Controller, Key
@@ -15,7 +14,7 @@ import cv2
 import numpy as np
 
 keyboard = Controller()
-OS_NAME = platform.system().lower()
+OS_NAME = platform.system().lower()  # "darwin", "windows", "linux"
 
 movement_keys = [["w"], ["a"], ["s"], ["d"],
                  ["w", "a"], ["w", "d"], ["a", "s"], ["d", "s"]]
@@ -27,19 +26,16 @@ last_move = None
 coin_flip = None
 abilities = []
 
-# === Script & log directory setup ===
+# === Disconnected log setup ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "disconnected_logs")
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
-else:
-    for f in os.listdir(LOG_DIR):
-        os.remove(os.path.join(LOG_DIR, f))
 
 # === OS-specific helpers ===
 def launch_roblox(place_id=None):
-    if OS_NAME == "darwin":
+    if OS_NAME == "darwin":  # macOS
         if place_id:
             os.system(f"open roblox://placeId={place_id}")
         else:
@@ -92,24 +88,38 @@ def quit_roblox():
         print("Error quitting Roblox:", e)
 
 def fullscreen_roblox():
-    pass
+    pass  # Left blank – too dependent on platform/GUI libs
 
 # === Disconnected Detection ===
 def check_disconnected():
     img = ImageGrab.grab()
     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
+
+    # Preprocess image for better OCR
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+    data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
 
     for i, word in enumerate(data["text"]):
         if "disconnected" in word.lower():
             (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
+
+            # Draw bounding box
             cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
+
+            # Add timestamp
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, (0, 0, 255), 2, cv2.LINE_AA)
+
+            # Save screenshot in new LOG_DIR
             filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-            cv2.imwrite(filename, img_bgr)
-            print(f"⚠️ Disconnected detected! Logged to {filename}")
+            try:
+                cv2.imwrite(filename, img_bgr)
+                print(f"⚠️ Disconnected detected! Logged to {filename}")
+            except Exception as e:
+                print("❌ Failed to save screenshot:", e)
             return True
     return False
 
@@ -133,6 +143,7 @@ def spin_sequence():
     def hold_extra(key):
         time.sleep(0.2)
         keyboard.release(key)
+
     for k in ["w", "a", "s", "d"]:
         keyboard.press(k)
         time.sleep(0.2)
