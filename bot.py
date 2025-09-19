@@ -98,7 +98,7 @@ def fullscreen_roblox():
 def check_disconnected():
     img = ImageGrab.grab()
     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    data = pytesseract.image_to_data(img_bgr, output_type=cv2.OCR_DICT)
+    data = pytesseract.image_to_data(img_bgr, output_type=pytesseract.Output.DICT)
 
     for i, word in enumerate(data["text"]):
         if "disconnected" in word.lower():
