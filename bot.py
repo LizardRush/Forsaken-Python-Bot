@@ -132,6 +132,7 @@ def check_disconnected():
     return found
 
 def reconnect_if_disconnected():
+    time.sleep(1)
     while True:
         if check_disconnected():
             launch_roblox(place_id="18687417158")
