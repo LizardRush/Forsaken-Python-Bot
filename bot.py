@@ -26,6 +26,10 @@ last_move = None
 coin_flip = None
 abilities = []
 
+# === Money tracking ===
+start_money = None
+end_money = None
+
 # === Disconnected log setup ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "disconnected_logs")
@@ -90,15 +94,29 @@ def quit_roblox():
 def fullscreen_roblox():
     pass  # Left blank – too dependent on platform/GUI libs
 
+# === Money OCR Helper ===
+def read_money_box():
+    """Reads money value from predefined region and returns as int (if found)."""
+    # Region: (x1, y1, x2, y2)
+    region = (41, 149, 171, 176)  # adjusted to integer box
+    img = ImageGrab.grab(bbox=region)
+    gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+    _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+    text = pytesseract.image_to_string(thresh, config="--psm 7 digits")
+    text = "".join([c for c in text if c.isdigit()])
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
 # === Disconnected Detection ===
 def check_disconnected():
     img = ImageGrab.grab()
     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
-    # Preprocess image for better OCR
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-
     data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
 
     found = False
@@ -113,15 +131,12 @@ def check_disconnected():
             w += 20
             h += 20
 
-            # draw bounding box
             cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
 
-            # add timestamp text
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, (0, 0, 255), 2, cv2.LINE_AA)
 
-            # save screenshot with timestamped filename
             filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
             try:
                 cv2.imwrite(filename, img_bgr)
@@ -166,7 +181,7 @@ def occasional_f():
 
 # === Main Loop ===
 def movement_loop():
-    global running, last_move, paused
+    global running, last_move, paused, start_money
     paused = True
     launch_roblox(place_id="18687417158")
     time.sleep(15)
@@ -177,6 +192,16 @@ def movement_loop():
         running = False
         return
     fullscreen_roblox()
+
+    # === Added Step: Open chat, click, read money ===
+    keyboard.press("/")
+    time.sleep(0.2)
+    keyboard.release("/")
+    pyautogui.click(138, 31)
+    time.sleep(0.2)
+    start_money = read_money_box()
+    print(f"💰 Starting money: {start_money}")
+
     print("Starting bot...")
     paused = False
 
@@ -213,9 +238,13 @@ def movement_loop():
                 last_move = keys
 
 def on_press(key):
-    global running
+    global running, end_money
     if key == kb.Key.f9:
         print("F9 pressed. Stopping bot.")
+        end_money = read_money_box()
+        print(f"💰 Ending money: {end_money}")
+        if start_money is not None and end_money is not None:
+            print(f"📈 Money gained: {end_money - start_money}")
         quit_roblox()
         running = False
         return False
