@@ -184,7 +184,7 @@ def movement_loop():
     global running, last_move, paused, start_money
     paused = True
     launch_roblox(place_id="18687417158")
-    time.sleep(15)
+    time.sleep(25)
     fullscreen_roblox()
     print("Focusing Roblox...")
     if not focus_roblox():
