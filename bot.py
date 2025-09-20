@@ -184,7 +184,7 @@ def movement_loop():
     global running, last_move, paused, start_money
     paused = True
     launch_roblox(place_id="18687417158")
-    time.sleep(25)
+    time.sleep(20)
     fullscreen_roblox()
     print("Focusing Roblox...")
     if not focus_roblox():
@@ -197,6 +197,7 @@ def movement_loop():
     keyboard.press("/")
     time.sleep(0.2)
     keyboard.release("/")
+    time.sleep(0.2)
     pyautogui.click(138, 31)
     time.sleep(0.2)
     start_money = read_money_box()
