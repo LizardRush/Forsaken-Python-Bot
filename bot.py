@@ -224,9 +224,9 @@ def movement_loop():
         keyboard.press("/")
         time.sleep(0.2)
         keyboard.release("/")
-        time.sleep(0.5)
+        time.sleep(1)
         pyautogui.click(138, 31)
-        time.sleep(0.5)
+        time.sleep(1)
         start_money = read_money_box()
         print(f"💰 Starting money: {start_money}")
     except Exception as e:
