@@ -15,20 +15,13 @@ from PIL import ImageGrab
 import cv2
 import numpy as np
 
-# === GLOBAL UNICODE FIX ===
+# === GLOBAL UTF-8 SAFE IO ===
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-def safe_open(path, mode="r", **kwargs):
-    """Opens text files safely with UTF-8, binary files unchanged."""
-    if "b" not in mode:
-        return open(path, mode, encoding="utf-8", errors="replace", **kwargs)
-    else:
-        return open(path, mode, **kwargs)
-
 keyboard = Controller()
-OS_NAME = platform.system().lower()  # "windows", "darwin", "linux"
+OS_NAME = platform.system().lower()
 
 movement_keys = [["w"], ["a"], ["s"], ["d"],
                  ["w", "a"], ["w", "d"], ["a", "s"], ["d", "s"]]
@@ -54,20 +47,12 @@ if not os.path.exists(LOG_DIR):
 # === OS-specific helpers ===
 def launch_roblox(place_id=None):
     if OS_NAME == "darwin":  # macOS
-        if place_id:
-            os.system(f"open roblox://placeId={place_id}")
-        else:
-            os.system("open -a RobloxPlayer")
+        cmd = f"open roblox://placeId={place_id}" if place_id else "open -a RobloxPlayer"
     elif OS_NAME == "windows":
-        if place_id:
-            os.system(f'start roblox-player:1+launchmode:play+gameinfo:&placeId={place_id}')
-        else:
-            os.system("start RobloxPlayerBeta.exe")
-    elif OS_NAME == "linux":
-        if place_id:
-            os.system(f"wine RobloxPlayerBeta.exe -play -placeId {place_id}")
-        else:
-            os.system("wine RobloxPlayerBeta.exe")
+        cmd = f'start roblox-player:1+launchmode:play+gameinfo:&placeId={place_id}' if place_id else "start RobloxPlayerBeta.exe"
+    else:
+        cmd = f"wine RobloxPlayerBeta.exe -play -placeId {place_id}" if place_id else "wine RobloxPlayerBeta.exe"
+    os.system(cmd)
 
 def focus_roblox():
     try:
@@ -80,7 +65,7 @@ def focus_roblox():
             subprocess.run(["osascript", "-e", script], check=True)
         elif OS_NAME == "windows":
             os.system("nircmd win activate ititle Roblox")
-        elif OS_NAME == "linux":
+        else:
             os.system("xdotool search --onlyvisible --class Roblox windowactivate")
         time.sleep(0.5)
         return True
@@ -100,35 +85,53 @@ def quit_roblox():
             keyboard.release("q")
         elif OS_NAME == "windows":
             os.system("taskkill /im RobloxPlayerBeta.exe /f >nul 2>&1")
-        elif OS_NAME == "linux":
+        else:
             os.system("pkill -f RobloxPlayerBeta.exe")
     except Exception as e:
         print("Error quitting Roblox:", e)
 
 def fullscreen_roblox():
-    pass  # left empty — depends on platform GUI
+    pass  # left empty — platform dependent
 
-# === Safe OCR Wrapper ===
-def safe_ocr_image(img):
+# === Safe Tesseract Call ===
+def safe_tesseract_image_to_data(img, **kwargs):
     try:
-        return pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        if isinstance(img, np.ndarray):
+            success, buf = cv2.imencode(".png", img)
+            if not success:
+                print("⚠️ Failed to encode image to PNG.")
+                return {"text": []}
+            img_bytes = buf.tobytes()
+        else:
+            from io import BytesIO
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            img_bytes = buf.getvalue()
+
+        return pytesseract.image_to_data(img_bytes, output_type=pytesseract.Output.DICT, **kwargs)
+    except pytesseract.TesseractError as e:
+        print("⚠️ Tesseract internal error:", e)
+        return {"text": []}
     except UnicodeDecodeError:
-        print("⚠️ OCR failed due to invalid bytes. Skipping...")
+        print("⚠️ UnicodeDecodeError inside Tesseract. Skipping frame.")
         return {"text": []}
     except Exception as e:
-        print("⚠️ OCR general error:", e)
+        print("⚠️ OCR exception:", e)
         return {"text": []}
 
 # === Money OCR Helper ===
 def read_money_box():
-    """Reads money value from predefined region and returns as int (if found)."""
     try:
         region = (41, 149, 171, 176)
         img = ImageGrab.grab(bbox=region)
         gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
         _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
 
-        text = pytesseract.image_to_string(thresh, config="--psm 7 digits")
+        success, buf = cv2.imencode(".png", thresh)
+        if not success:
+            return None
+        img_bytes = buf.tobytes()
+        text = pytesseract.image_to_string(img_bytes, config="--psm 7 digits")
         text = "".join([c for c in text if c.isdigit()])
         return int(text) if text else None
     except UnicodeDecodeError:
@@ -143,31 +146,21 @@ def check_disconnected():
     try:
         img = ImageGrab.grab()
         img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-        data = safe_ocr_image(thresh)
 
+        data = safe_tesseract_image_to_data(thresh)
         for i, word in enumerate(data.get("text", [])):
             if "disconnected" in word.lower():
-                (x, y, w, h) = (data["left"][i], data["top"][i],
-                                data["width"][i], data["height"][i])
-                x = max(0, x - 10)
-                y = max(0, y - 10)
-                w += 20
-                h += 20
+                x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+                x, y, w, h = max(0, x - 10), max(0, y - 10), w + 20, h + 20
                 cv2.rectangle(img_bgr, (x, y), (x + w, y + h), (0, 0, 255), 3)
-
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 cv2.putText(img_bgr, timestamp, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
                             0.7, (0, 0, 255), 2, cv2.LINE_AA)
-
                 filename = os.path.join(LOG_DIR, f"disconnected_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                try:
-                    cv2.imwrite(filename, img_bgr)
-                    print(f"⚠️ Disconnected detected! Logged to {filename}")
-                except Exception as e:
-                    print("❌ Failed to save screenshot:", e)
+                cv2.imwrite(filename, img_bgr)
+                print(f"⚠️ Disconnected detected! Logged to {filename}")
                 return True
         return False
     except Exception as e:
@@ -227,14 +220,13 @@ def movement_loop():
         return
     fullscreen_roblox()
 
-    # === Money read ===
     try:
         keyboard.press("/")
         time.sleep(0.2)
         keyboard.release("/")
-        time.sleep(0.2)
+        time.sleep(0.5)
         pyautogui.click(138, 31)
-        time.sleep(0.2)
+        time.sleep(0.5)
         start_money = read_money_box()
         print(f"💰 Starting money: {start_money}")
     except Exception as e:
